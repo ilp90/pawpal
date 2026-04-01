@@ -377,3 +377,153 @@ def test_detect_conflicts_skips_untimed_tasks():
 
     warnings = Scheduler(owner).detect_conflicts([a, b])
     assert warnings == []
+
+
+# ---------------------------------------------------------------------------
+# Edge cases – empty / boundary inputs
+# ---------------------------------------------------------------------------
+
+def test_schedule_owner_with_no_pets_returns_empty():
+    """An owner with no pets should produce an empty schedule."""
+    owner = Owner(name="Jordan", available_minutes_per_day=120)
+    assert Scheduler(owner).generate_schedule() == []
+
+
+def test_schedule_all_tasks_completed_returns_empty():
+    """When every task is already completed the schedule should be empty."""
+    owner = Owner(name="Jordan", available_minutes_per_day=120)
+    pet = Pet(name="Mochi", species="dog")
+    pet.add_task(Task("Walk", 30, completed=True))
+    pet.add_task(Task("Feed", 10, completed=True))
+    owner.add_pet(pet)
+    assert Scheduler(owner).generate_schedule() == []
+
+
+def test_schedule_task_exactly_fills_budget():
+    """A task whose duration equals the remaining budget exactly should be included."""
+    owner = Owner(name="Jordan", available_minutes_per_day=30)
+    pet = Pet(name="Mochi", species="dog")
+    pet.add_task(Task("Walk", 30, priority="high"))
+    owner.add_pet(pet)
+
+    schedule = Scheduler(owner).generate_schedule()
+    assert len(schedule) == 1
+    assert schedule[0].title == "Walk"
+
+
+def test_schedule_task_one_minute_over_budget_is_excluded():
+    """A task one minute over the remaining budget must not be scheduled."""
+    owner = Owner(name="Jordan", available_minutes_per_day=29)
+    pet = Pet(name="Mochi", species="dog")
+    pet.add_task(Task("Walk", 30, priority="high"))
+    owner.add_pet(pet)
+
+    assert Scheduler(owner).generate_schedule() == []
+
+
+def test_schedule_pet_with_no_tasks_does_not_crash():
+    """A pet that has no tasks at all should not cause an error."""
+    owner = Owner(name="Jordan", available_minutes_per_day=60)
+    owner.add_pet(Pet(name="Mochi", species="dog"))  # no tasks added
+    schedule = Scheduler(owner).generate_schedule()
+    assert schedule == []
+
+
+def test_explain_plan_empty_schedule_returns_message():
+    """explain_plan() given an empty schedule should return the no-tasks message."""
+    owner = Owner(name="Jordan", available_minutes_per_day=60)
+    owner.add_pet(Pet(name="Mochi", species="dog"))
+    msg = Scheduler(owner).explain_plan([])
+    assert "No tasks" in msg
+
+
+def test_sort_by_time_empty_list_returns_empty():
+    """sort_by_time on an empty list should return an empty list without error."""
+    owner = Owner(name="Jordan", available_minutes_per_day=60)
+    owner.add_pet(Pet(name="Mochi", species="dog"))
+    assert Scheduler(owner).sort_by_time([]) == []
+
+
+def test_filter_tasks_unknown_pet_name_returns_empty():
+    """filter_tasks for a pet name that does not exist should return []."""
+    owner = Owner(name="Jordan", available_minutes_per_day=60)
+    pet = Pet(name="Mochi", species="dog")
+    pet.add_task(Task("Walk", 30))
+    owner.add_pet(pet)
+    result = Scheduler(owner).filter_tasks(pet_name="Ghost")
+    assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Edge cases – recurring tasks
+# ---------------------------------------------------------------------------
+
+def test_mark_complete_daily_no_due_date_uses_today():
+    """A daily task with no due_date should base its next occurrence on today."""
+    task = Task("Feed", 10, frequency="daily")   # due_date is None
+    next_task = task.mark_complete()
+    assert next_task is not None
+    assert next_task.due_date == date.today() + timedelta(days=1)
+
+
+def test_mark_complete_weekly_no_due_date_uses_today():
+    """A weekly task with no due_date should base its next occurrence on today."""
+    task = Task("Flea treatment", 5, frequency="weekly")  # due_date is None
+    next_task = task.mark_complete()
+    assert next_task is not None
+    assert next_task.due_date == date.today() + timedelta(weeks=1)
+
+
+def test_recurring_next_task_inherits_attributes():
+    """The next occurrence should copy title, duration, priority, category, frequency."""
+    today = date.today()
+    task = Task("Morning feed", 10, priority="high", category="feed",
+                frequency="daily", due_date=today)
+    next_task = task.mark_complete()
+    assert next_task.title == "Morning feed"
+    assert next_task.duration_minutes == 10
+    assert next_task.priority == "high"
+    assert next_task.category == "feed"
+    assert next_task.frequency == "daily"
+    assert next_task.completed is False
+
+
+# ---------------------------------------------------------------------------
+# Edge cases – conflict detection
+# ---------------------------------------------------------------------------
+
+def test_detect_conflicts_empty_schedule_returns_empty():
+    """detect_conflicts on an empty list should return no warnings."""
+    owner = Owner(name="Jordan", available_minutes_per_day=60)
+    owner.add_pet(Pet(name="Mochi", species="dog"))
+    assert Scheduler(owner).detect_conflicts([]) == []
+
+
+def test_detect_conflicts_three_way_overlap():
+    """Three mutually overlapping tasks should generate three pairwise warnings."""
+    owner = Owner(name="Jordan", available_minutes_per_day=180)
+    owner.add_pet(Pet(name="Mochi", species="dog"))
+
+    # All three overlap each other: A(10:00-11:00), B(10:15-11:15), C(10:30-11:30)
+    a = Task("Vet check",   60, start_time="10:00")
+    b = Task("Grooming",    60, start_time="10:15")
+    c = Task("Training",    60, start_time="10:30")
+
+    warnings = Scheduler(owner).detect_conflicts([a, b, c])
+    assert len(warnings) == 3
+
+
+def test_detect_conflicts_one_overlap_two_safe():
+    """Only the overlapping pair should produce a warning; the safe pair should not."""
+    owner = Owner(name="Jordan", available_minutes_per_day=180)
+    owner.add_pet(Pet(name="Mochi", species="dog"))
+
+    # A and B overlap; C is safely after both
+    a = Task("Walk",    30, start_time="08:00")   # ends 08:30
+    b = Task("Feed",    20, start_time="08:15")   # ends 08:35 → overlaps A
+    c = Task("Play",    20, start_time="09:00")   # starts well after both
+
+    warnings = Scheduler(owner).detect_conflicts([a, b, c])
+    assert len(warnings) == 1
+    assert "Walk" in warnings[0]
+    assert "Feed" in warnings[0]

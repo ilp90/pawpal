@@ -54,3 +54,27 @@ Beyond the basic greedy planner, `pawpal_system.py` includes four algorithmic fe
 | **Conflict detection** | `Scheduler.detect_conflicts(schedule)` | Compares every pair of tasks that have an explicit `start_time`. Returns a list of human-readable warning strings for any overlapping time windows. Returns `[]` when the schedule is clean. |
 
 `generate_schedule()` assigns sequential start times (default first slot: `08:00`) so the full schedule is always ready for time-based display or conflict checking.
+
+## Testing PawPal+
+
+Run the full test suite with:
+
+```bash
+python -m pytest
+# or for verbose output:
+python -m pytest -v
+```
+
+**42 tests** across five areas:
+
+| Area | # tests | What is verified |
+|---|---|---|
+| Core model | 7 | `Task.mark_complete()`, `Pet.add_task()` / `get_tasks()`, `Owner.get_all_tasks()` |
+| Scheduler | 6 | Time budget (exact-fit, one-minute-over), priority ordering, completed-task exclusion, start-time assignment |
+| Sort & filter | 6 | Chronological order, untimed-last, filter by pet name / completion status / both, empty-list safety |
+| Recurring tasks | 6 | Daily/weekly next-occurrence date, attribute inheritance, `complete_task()` auto-append, non-recurring no-op |
+| Conflict detection | 5 | Two-task overlap, no overlap, adjacent (touching) tasks, untimed tasks ignored, three-way pairwise warnings |
+| Edge cases | 12 | Empty owner, all tasks completed, unknown pet name, zero-budget, pet with no tasks, `explain_plan` on empty schedule |
+
+**Confidence level: ★★★★☆**
+Core scheduling logic and all algorithmic features are fully tested. The Streamlit UI layer has no automated tests and is verified manually.

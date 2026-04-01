@@ -107,13 +107,30 @@ This is a deliberate simplification: checking every possible pair regardless of 
 
 **a. What you tested**
 
-- What behaviors did you test?
-- Why were these tests important?
+The test suite (`tests/test_pawpal.py`, 42 tests) covers five categories:
+
+1. **Core model behaviour** — `Task.mark_complete()` sets the flag; `Pet.add_task()` / `get_tasks()` mutate and return correctly; `Owner.get_all_tasks()` aggregates across multiple pets.
+2. **Scheduling logic** — greedy scheduler respects the time budget (including exact-fit and one-minute-over boundary conditions), orders by priority, and excludes already-completed tasks.
+3. **Sorting and filtering** — `sort_by_time()` produces chronological order with untimed tasks last; `filter_tasks()` narrows by pet name, completion status, or both; edge cases like empty lists and unknown pet names return empty rather than crashing.
+4. **Recurring tasks** — daily and weekly `mark_complete()` return the correct next `due_date`; attributes are fully inherited; `complete_task()` automatically appends the recurrence to the pet; non-recurring tasks leave the pet's task count unchanged.
+5. **Conflict detection** — two-task overlap is flagged; adjacent (non-overlapping) and untimed tasks produce no warnings; three-way overlaps generate exactly three pairwise warnings; an empty schedule returns `[]`.
+
+These tests matter because the scheduler's value depends entirely on correctness: a wrong priority sort or an off-by-one budget check would silently produce a bad plan that the user might follow without noticing.
 
 **b. Confidence**
 
-- How confident are you that your scheduler works correctly?
-- What edge cases would you test next if you had more time?
+Confidence level: ★★★★☆ (4/5)
+
+The core greedy algorithm and all new algorithmic features are well-covered. Confidence is not 5/5 because:
+
+- The Streamlit UI layer (`app.py`) has no automated tests — session-state persistence is only verified manually.
+- There are no tests for malformed input (e.g., `start_time="not-a-time"`, negative durations) — the code handles these gracefully for the known paths but it is not systematically verified.
+
+**Edge cases to test next:**
+- Tasks with `duration_minutes=0` (should they be included or skipped?).
+- An owner with 100+ pets and tasks — performance/scalability check.
+- Concurrent `generate_schedule()` calls modifying `start_time` in-place on shared Task objects (potential mutation hazard in the Streamlit session).
+- A recurring task chain across several completions to verify the date arithmetic compounds correctly.
 
 ---
 
