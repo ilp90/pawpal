@@ -21,6 +21,10 @@ The system is built around four classes:
 
 **Relationships:** An Owner owns one or more Pets; each Pet has zero or more Tasks; the Scheduler uses the Owner (for time constraints) and the Pet (for tasks) to produce a schedule.
 
+**Initial draft (Phase 1)** — four classes, basic greedy scheduler, no recurrence or conflict detection.
+
+**Final architecture (Phase 6)** — updated to reflect all additions made during Phases 3–5:
+
 ```mermaid
 classDiagram
     class Owner {
@@ -31,6 +35,7 @@ classDiagram
         +add_pet(pet: Pet) None
         +get_pets() list
         +set_available_time(minutes: int) None
+        +get_all_tasks() list
     }
     class Pet {
         +str name
@@ -48,21 +53,27 @@ classDiagram
         +str priority
         +str category
         +bool completed
-        +mark_complete() None
+        +str start_time
+        +str frequency
+        +Optional~date~ due_date
+        +mark_complete() Optional~Task~
     }
     class Scheduler {
         +Owner owner
-        +Pet pet
-        +list~Task~ tasks
-        +generate_schedule() list
         +prioritize_tasks() list
+        +generate_schedule(day_start: str) list
+        +sort_by_time(tasks: list) list
+        +filter_tasks(pet_name, completed) list
+        +detect_conflicts(schedule: list) list
+        +complete_task(pet: Pet, task: Task) None
         +explain_plan(schedule: list) str
     }
     Owner "1" --> "1..*" Pet : owns
     Pet "1" --> "0..*" Task : has
-    Scheduler --> Owner : uses
-    Scheduler --> Pet : schedules for
-    Scheduler --> Task : orders
+    Scheduler --> Owner : drives scheduling via
+    Scheduler ..> Pet : passes to complete_task
+    Scheduler ..> Task : sorts, filters, checks
+    Task ..> Task : mark_complete returns next occurrence
 ```
 
 **b. Design changes**
@@ -93,13 +104,20 @@ This is a deliberate simplification: checking every possible pair regardless of 
 
 **a. How you used AI**
 
-- How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
-- What kinds of prompts or questions were most helpful?
+AI was used at every phase but in different roles:
+
+- **Phase 1 (design):** AI brainstormed the four core classes and generated the initial Mermaid UML. The most effective prompt pattern was *"given these attributes and methods, draw a class diagram"* — concrete constraints produced concrete output rather than vague suggestions.
+- **Phase 2 (implementation):** AI generated method bodies from the stubs. Prompts like *"implement `generate_schedule()` as a greedy knapsack on `available_minutes_per_day`"* were much more productive than *"implement the scheduler"* — specifying the algorithm prevented AI from choosing an arbitrary approach.
+- **Phase 4 (algorithms):** AI was used to compare two conflict-detection strategies — exact-time-match vs. interval-overlap — before choosing. Asking *"what are the tradeoffs between these two approaches?"* rather than *"which is better?"* produced a neutral analysis useful for making an informed decision.
+- **Phase 5 (testing):** AI generated a first-pass test suite, which was then manually extended with boundary-condition tests (exact-fit budget, one-minute-over, three-way overlap) that it had missed.
+
+The most consistently helpful prompt pattern: **start with constraints** ("using Python dataclasses", "without external libraries", "return warnings not exceptions"), then state the behaviour. Vague prompts produce vague code.
 
 **b. Judgment and verification**
 
-- Describe one moment where you did not accept an AI suggestion as-is.
-- How did you evaluate or verify what the AI suggested?
+When AI initially generated the Scheduler it produced a version that took both `owner` and `pet` as constructor arguments — matching the Phase 1 UML stub exactly. The suggestion was rejected because the project brief explicitly requires the scheduler to work *across* all of an owner's pets, not just one. Accepting the AI's version would have required passing a different `Scheduler(owner, pet)` instance for every pet, duplicating logic and making multi-pet scheduling impossible without calling the scheduler in a loop outside the class.
+
+The fix — changing to `Scheduler(owner)` and having it call `owner.get_all_tasks()` — was verified by writing `test_get_all_tasks_aggregates_across_pets` first, then confirming `generate_schedule()` returned tasks from both pets in the demo. The lesson: AI tends to reproduce the structure it was given (the stub), not the structure the *requirements* imply — that gap is the human's responsibility to catch.
 
 ---
 
@@ -138,12 +156,16 @@ The core greedy algorithm and all new algorithmic features are well-covered. Con
 
 **a. What went well**
 
-- What part of this project are you most satisfied with?
+The clearest success was the "CLI-first" workflow from Phase 2: building and verifying all logic in `main.py` before touching `app.py` meant the Streamlit integration in Phase 3 was nearly mechanical — just wiring existing, tested methods to UI widgets. There were no "it works in the browser but not in the logic" surprises because the logic had already been run independently.
+
+The test suite is also something I'm satisfied with. Starting with happy paths and then systematically asking "what could be empty?" and "what is the exact boundary?" produced tests that caught real edge cases (the one-minute-over budget exclusion, the adjacent-tasks-should-not-conflict rule) rather than just re-testing the happy path with different variable names.
 
 **b. What you would improve**
 
-- If you had another iteration, what would you improve or redesign?
+The biggest architectural weakness is that `generate_schedule()` mutates `start_time` directly on the shared `Task` objects stored in the pet's task list. This means calling `generate_schedule()` twice with different `day_start` values silently overwrites the first run's times. In a next iteration I would make `generate_schedule()` return immutable `ScheduledSlot` objects (task reference + assigned start time) rather than modifying the tasks in place — keeping the Task model pure and making multiple schedule comparisons possible.
+
+I would also add a `day_start` preference to `Owner` so the sidebar default is remembered per user rather than resetting to `08:00` every session.
 
 **c. Key takeaway**
 
-- What is one important thing you learned about designing systems or working with AI on this project?
+The most important thing I learned is that **AI is excellent at filling in structure, but the human must define the structure's purpose**. Every time AI produced code that was technically correct but wrong for the requirements (e.g., Scheduler taking a single Pet), the root cause was that the prompt described *what the code looked like* rather than *what problem it needed to solve*. The most productive collaboration happened when I brought a clear constraint — "the scheduler must handle all pets, not just one" — and let AI figure out the implementation. That division of labour — human sets intent, AI implements — was faster and produced better results than either working alone.

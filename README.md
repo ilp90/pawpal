@@ -22,6 +22,17 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
+## Features
+
+- **Owner & pet profiles** — register one or more pets with name, species, age, and breed; set a daily time budget.
+- **Task management** — add tasks with title, duration, priority (low/medium/high), category, and optional recurrence (daily/weekly).
+- **Smart daily scheduler** — greedy algorithm selects and orders tasks by priority within the owner's time budget; assigns sequential start times from a configurable day start.
+- **Sort by time** — any task list can be sorted chronologically (HH:MM); untimed tasks go last.
+- **Filter tasks** — narrow the task list by pet name, completion status, or both.
+- **Recurring task auto-scheduling** — marking a daily or weekly task complete automatically queues the next occurrence for the following day or week.
+- **Conflict detection** — compares every pair of time-pinned tasks; surfaces human-readable warnings for any overlapping windows without crashing the app.
+- **Plan explanation** — plain-English summary shows time used vs. available and explains which tasks were skipped and why.
+
 ## Getting started
 
 ### Setup
