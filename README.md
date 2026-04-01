@@ -41,3 +41,16 @@ pip install -r requirements.txt
 5. Add tests to verify key behaviors.
 6. Connect your logic to the Streamlit UI in `app.py`.
 7. Refine UML so it matches what you actually built.
+
+## Smarter Scheduling
+
+Beyond the basic greedy planner, `pawpal_system.py` includes four algorithmic features:
+
+| Feature | Method | How it works |
+|---|---|---|
+| **Sort by time** | `Scheduler.sort_by_time(tasks)` | Sorts any task list by `start_time` (HH:MM) ascending; untimed tasks go last. |
+| **Filter tasks** | `Scheduler.filter_tasks(pet_name, completed)` | Returns tasks matching an optional pet name and/or completion status. Both filters can be combined or omitted. |
+| **Recurring tasks** | `Task.mark_complete()` / `Scheduler.complete_task(pet, task)` | A task with `frequency="daily"` or `"weekly"` returns its next occurrence when completed. `complete_task()` automatically appends that occurrence to the pet so it appears in tomorrow's schedule. |
+| **Conflict detection** | `Scheduler.detect_conflicts(schedule)` | Compares every pair of tasks that have an explicit `start_time`. Returns a list of human-readable warning strings for any overlapping time windows. Returns `[]` when the schedule is clean. |
+
+`generate_schedule()` assigns sequential start times (default first slot: `08:00`) so the full schedule is always ready for time-based display or conflict checking.

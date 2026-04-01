@@ -79,13 +79,13 @@ During the skeleton and implementation phases, two refinements emerged:
 
 **a. Constraints and priorities**
 
-- What constraints does your scheduler consider (for example: time, priority, preferences)?
-- How did you decide which constraints mattered most?
+The scheduler considers two constraints: **priority** (high/medium/low) and the **owner's total available minutes per day**. Priority was chosen as the primary sort key because a pet owner cares more about urgency (medication before enrichment) than about clock time. The daily budget is the hard cap — no task is added once time runs out. A secondary sort by duration (shorter tasks first within the same priority tier) helps fit more tasks into the remaining budget after high-priority items are placed.
 
 **b. Tradeoffs**
 
-- Describe one tradeoff your scheduler makes.
-- Why is that tradeoff reasonable for this scenario?
+The conflict detector only flags tasks that have an explicit `start_time` set. Tasks without a start time are auto-assigned sequential slots by `generate_schedule()` and are therefore guaranteed not to overlap each other — but any manually pre-assigned time is trusted at face value and checked against the rest.
+
+This is a deliberate simplification: checking every possible pair regardless of whether a time was set would produce false positives for tasks that were never actually time-pinned. The tradeoff is that a user who forgets to set `start_time` will not get a conflict warning even if they mentally intend two tasks to overlap — but the app never silently crashes or produces an invalid schedule.
 
 ---
 
