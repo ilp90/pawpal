@@ -527,3 +527,167 @@ def test_detect_conflicts_one_overlap_two_safe():
     assert len(warnings) == 1
     assert "Walk" in warnings[0]
     assert "Feed" in warnings[0]
+
+
+# ---------------------------------------------------------------------------
+# Challenge 1 – Weighted scheduling & next_available_slot
+# ---------------------------------------------------------------------------
+
+def test_weighted_schedule_boosts_overdue_medium_above_low():
+    """An overdue medium task should be scheduled before a non-urgent low task."""
+    owner = Owner(name="Jordan", available_minutes_per_day=120)
+    pet = Pet(name="Mochi", species="dog")
+    low_task  = Task("Play session",  20, priority="low")
+    overdue   = Task("Overdue meds",  10, priority="medium",
+                     frequency="daily", due_date=date.today() - timedelta(days=1))
+    pet.add_task(low_task)
+    pet.add_task(overdue)
+    owner.add_pet(pet)
+
+    schedule = Scheduler(owner).generate_weighted_schedule()
+    assert schedule[0].title == "Overdue meds"
+
+
+def test_weighted_schedule_overdue_medium_equals_nonurgent_high_score():
+    """_task_score: overdue medium (5+5=10) must equal non-urgent high (10+0=10)."""
+    owner = Owner(name="Jordan", available_minutes_per_day=120)
+    owner.add_pet(Pet(name="Mochi", species="dog"))
+    sched = Scheduler(owner)
+
+    high_task  = Task("Vet",  30, priority="high")
+    med_overdue = Task("Meds", 10, priority="medium",
+                       due_date=date.today() - timedelta(days=2))
+    assert sched._task_score(high_task) == sched._task_score(med_overdue)
+
+
+def test_weighted_schedule_respects_time_budget():
+    """Weighted scheduler must not exceed the owner's time budget."""
+    owner = Owner(name="Jordan", available_minutes_per_day=40)
+    pet = Pet(name="Mochi", species="dog")
+    pet.add_task(Task("Walk", 30, priority="high"))
+    pet.add_task(Task("Play", 25, priority="medium"))
+    owner.add_pet(pet)
+
+    schedule = Scheduler(owner).generate_weighted_schedule()
+    total = sum(t.duration_minutes for t in schedule)
+    assert total <= owner.available_minutes_per_day
+
+
+def test_next_available_slot_empty_schedule_returns_day_start():
+    """With no scheduled tasks, the next slot is the day start."""
+    owner = Owner(name="Jordan", available_minutes_per_day=120)
+    owner.add_pet(Pet(name="Mochi", species="dog"))
+    task = Task("Walk", 30)
+    slot = Scheduler(owner).next_available_slot(task, [], day_start="08:00")
+    assert slot == "08:00"
+
+
+def test_next_available_slot_finds_gap_between_tasks():
+    """Scheduler should identify a gap between two consecutive scheduled tasks."""
+    owner = Owner(name="Jordan", available_minutes_per_day=120)
+    owner.add_pet(Pet(name="Mochi", species="dog"))
+
+    # 08:00–08:30  gap of 90 min  10:00–10:30
+    schedule = [
+        Task("Walk",    30, start_time="08:00"),
+        Task("Groom",   30, start_time="10:00"),
+    ]
+    slot = Scheduler(owner).next_available_slot(
+        Task("Feed", 20), schedule, day_start="08:00"
+    )
+    assert slot == "08:30"
+
+
+def test_next_available_slot_no_room_returns_none():
+    """Returns None when no gap in the day can fit the task."""
+    owner = Owner(name="Jordan", available_minutes_per_day=120)
+    owner.add_pet(Pet(name="Mochi", species="dog"))
+
+    # Two tasks that fill 08:00–10:00 exactly; day_end=10:00 → no room for 30 min
+    schedule = [
+        Task("Walk", 60, start_time="08:00"),
+        Task("Feed", 60, start_time="09:00"),
+    ]
+    slot = Scheduler(owner).next_available_slot(
+        Task("Play", 30), schedule, day_start="08:00", day_end="10:00"
+    )
+    assert slot is None
+
+
+def test_next_available_slot_fits_after_last_task():
+    """Task fits in remaining time after the last scheduled item."""
+    owner = Owner(name="Jordan", available_minutes_per_day=120)
+    owner.add_pet(Pet(name="Mochi", species="dog"))
+
+    schedule = [Task("Walk", 30, start_time="08:00")]  # ends 08:30; day ends 22:00
+    slot = Scheduler(owner).next_available_slot(
+        Task("Feed", 10), schedule, day_start="08:00"
+    )
+    assert slot == "08:30"
+
+
+# ---------------------------------------------------------------------------
+# Challenge 2 – JSON serialisation round-trips
+# ---------------------------------------------------------------------------
+
+def test_task_roundtrip():
+    """to_dict() then from_dict() should reproduce an identical Task."""
+    today = date.today()
+    task = Task("Walk", 30, priority="high", category="walk",
+                frequency="daily", due_date=today, start_time="08:00",
+                completed=False)
+    assert Task.from_dict(task.to_dict()) == task
+
+
+def test_task_roundtrip_completed():
+    """Completed flag must survive a serialisation round-trip."""
+    task = Task("Feed", 10, completed=True)
+    assert Task.from_dict(task.to_dict()).completed is True
+
+
+def test_pet_roundtrip():
+    """Pet with tasks should round-trip through to_dict/from_dict."""
+    pet = Pet(name="Mochi", species="dog", age=3, breed="Shiba")
+    pet.add_task(Task("Walk", 30, priority="high"))
+    pet.add_task(Task("Feed", 10, frequency="daily", due_date=date.today()))
+
+    restored = Pet.from_dict(pet.to_dict())
+    assert restored.name == pet.name
+    assert restored.breed == pet.breed
+    assert len(restored.get_tasks()) == 2
+    assert restored.get_tasks()[1].frequency == "daily"
+
+
+def test_owner_save_and_load(tmp_path):
+    """save_to_json then load_from_json should reproduce the full object graph."""
+    owner = Owner("Jordan", available_minutes_per_day=90)
+    pet = Pet("Mochi", "dog", age=3)
+    pet.add_task(Task("Walk", 30, priority="high",
+                      frequency="daily", due_date=date.today()))
+    owner.add_pet(pet)
+
+    path = str(tmp_path / "data.json")
+    owner.save_to_json(path)
+    loaded = Owner.load_from_json(path)
+
+    assert loaded.name == "Jordan"
+    assert loaded.available_minutes_per_day == 90
+    assert len(loaded.get_pets()) == 1
+    assert loaded.get_pets()[0].name == "Mochi"
+    loaded_task = loaded.get_pets()[0].get_tasks()[0]
+    assert loaded_task.title == "Walk"
+    assert loaded_task.due_date == date.today()
+
+
+def test_owner_load_missing_file_raises():
+    """load_from_json should raise FileNotFoundError for a missing path."""
+    import pytest
+    with pytest.raises(FileNotFoundError):
+        Owner.load_from_json("/tmp/pawpal_no_such_file_xyz.json")
+
+
+def test_owner_roundtrip_preserves_preferences():
+    """Owner preferences list must survive a round-trip."""
+    owner = Owner("Jordan", preferences=["no tasks before 8am"])
+    owner2 = Owner.from_dict(owner.to_dict())
+    assert owner2.preferences == ["no tasks before 8am"]

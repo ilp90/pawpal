@@ -152,6 +152,26 @@ The core greedy algorithm and all new algorithmic features are well-covered. Con
 
 ---
 
+## 6. Prompt Comparison (Challenge 5)
+
+To implement the weighted urgency scheduler (`generate_weighted_schedule`), the same task was posed to two models: **Claude Sonnet 4.6** and **GPT-4o**.
+
+**Prompt given to both:**
+> "I have a greedy task scheduler that sorts by priority (high/medium/low). I want to add a scoring function that boosts tasks with near or overdue due_dates so that an overdue medium-priority task scores the same as a non-urgent high-priority task. Show me a _task_score(task) method and a generate_weighted_schedule() that uses it."
+
+**Claude Sonnet 4.6** returned a float-based score with named bonus tiers (`"overdue"`, `"tomorrow"`, `"soon"`, `"upcoming"`) stored in a module-level dict, and a `generate_weighted_schedule` that uses `sorted(…, key=lambda t: (-score, duration))`. The constant dict makes the bonus values easy to find, adjust, or test in isolation. Return type annotations and a docstring explaining the score formula (with example values) were included unprompted.
+
+**GPT-4o** returned an integer score computed with a chain of `if/elif` inside the method, with the magic numbers (10, 5, 1, 5, 3, 1) inline and no explanation of their relationship to each other. The sorting lambda used `reverse=True` on a list rather than negating the key, which works but is harder to read when combined with the secondary `duration_minutes` sort key.
+
+**Decision:** Claude's version was used because:
+- Named tiers in a module-level dict make the urgency thresholds self-documenting and patchable without editing the method.
+- Negating the key (`-score`) in a single `sorted()` call is more Pythonic than a separate `reverse=True` step when combined with a secondary sort.
+- The docstring example ("overdue medium = 5+5 = 10, non-urgent high = 10+0 = 10") encodes the design intent, which is exactly what a reviewer or future maintainer needs.
+
+**Key takeaway from the comparison:** both models produced functionally correct code. The difference was in *explainability* — Claude surfaced the reasoning behind the numbers, GPT-4o left them as undocumented magic values. For a system that others will maintain, explainability matters more than functional correctness alone.
+
+---
+
 ## 5. Reflection
 
 **a. What went well**

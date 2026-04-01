@@ -5,19 +5,41 @@ All backend classes live here. The Streamlit UI (app.py) imports from this modul
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-# Priority rank: lower number = higher urgency
+# Priority rank: lower number = higher urgency (used by standard scheduler)
 _PRIORITY_RANK: dict[str, int] = {"high": 0, "medium": 1, "low": 2}
 
-# Default first-task start time used by generate_schedule()
-_DAY_START = "08:00"
+# Weighted scheduler constants (Challenge 1)
+_PRIORITY_WEIGHT: dict[str, float] = {"high": 10.0, "medium": 5.0, "low": 1.0}
+_URGENCY_BONUS: dict[str, float] = {
+    "overdue":    5.0,   # due_date <= today
+    "tomorrow":   3.0,   # due in 1 day
+    "soon":       1.5,   # due in 2–3 days
+    "upcoming":   0.5,   # due in 4–7 days
+}
 
-VALID_PRIORITIES = ("low", "medium", "high")
-VALID_CATEGORIES = ("walk", "feed", "medication", "grooming", "enrichment", "other")
+# Default first-task start time
+_DAY_START = "08:00"
+_DAY_END   = "22:00"
+
+VALID_PRIORITIES  = ("low", "medium", "high")
+VALID_CATEGORIES  = ("walk", "feed", "medication", "grooming", "enrichment", "other")
 VALID_FREQUENCIES = ("none", "daily", "weekly")
+
+# Emoji display helpers (Challenges 3 & 4)
+PRIORITY_EMOJI: dict[str, str] = {"high": "🔴", "medium": "🟡", "low": "🟢"}
+CATEGORY_EMOJI: dict[str, str] = {
+    "walk":       "🦮",
+    "feed":       "🍽️",
+    "medication": "💊",
+    "grooming":   "✂️",
+    "enrichment": "🎾",
+    "other":      "📋",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -42,25 +64,44 @@ class Task:
         self.completed = True
         if self.frequency == "daily":
             next_due = (self.due_date or date.today()) + timedelta(days=1)
-            return Task(
-                title=self.title,
-                duration_minutes=self.duration_minutes,
-                priority=self.priority,
-                category=self.category,
-                frequency=self.frequency,
-                due_date=next_due,
-            )
+            return Task(title=self.title, duration_minutes=self.duration_minutes,
+                        priority=self.priority, category=self.category,
+                        frequency=self.frequency, due_date=next_due)
         if self.frequency == "weekly":
             next_due = (self.due_date or date.today()) + timedelta(weeks=1)
-            return Task(
-                title=self.title,
-                duration_minutes=self.duration_minutes,
-                priority=self.priority,
-                category=self.category,
-                frequency=self.frequency,
-                due_date=next_due,
-            )
+            return Task(title=self.title, duration_minutes=self.duration_minutes,
+                        priority=self.priority, category=self.category,
+                        frequency=self.frequency, due_date=next_due)
         return None
+
+    # -- Serialisation (Challenge 2) ------------------------------------
+
+    def to_dict(self) -> dict:
+        """Serialise to a plain dictionary suitable for JSON encoding."""
+        return {
+            "title":            self.title,
+            "duration_minutes": self.duration_minutes,
+            "priority":         self.priority,
+            "category":         self.category,
+            "completed":        self.completed,
+            "start_time":       self.start_time,
+            "frequency":        self.frequency,
+            "due_date":         self.due_date.isoformat() if self.due_date else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Task":
+        """Reconstruct a Task from a serialised dictionary."""
+        return cls(
+            title=data["title"],
+            duration_minutes=data["duration_minutes"],
+            priority=data.get("priority", "medium"),
+            category=data.get("category", "other"),
+            completed=data.get("completed", False),
+            start_time=data.get("start_time", ""),
+            frequency=data.get("frequency", "none"),
+            due_date=date.fromisoformat(data["due_date"]) if data.get("due_date") else None,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +126,33 @@ class Pet:
     def get_tasks(self) -> list[Task]:
         """Return a copy of all tasks for this pet."""
         return list(self.tasks)
+
+    # -- Serialisation (Challenge 2) ------------------------------------
+
+    def to_dict(self) -> dict:
+        """Serialise to a plain dictionary suitable for JSON encoding."""
+        return {
+            "name":    self.name,
+            "species": self.species,
+            "age":     self.age,
+            "breed":   self.breed,
+            "notes":   self.notes,
+            "tasks":   [t.to_dict() for t in self.tasks],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Pet":
+        """Reconstruct a Pet (and its tasks) from a serialised dictionary."""
+        pet = cls(
+            name=data["name"],
+            species=data["species"],
+            age=data.get("age", 0),
+            breed=data.get("breed", ""),
+            notes=data.get("notes", ""),
+        )
+        for td in data.get("tasks", []):
+            pet.add_task(Task.from_dict(td))
+        return pet
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +191,41 @@ class Owner:
         for pet in self.pets:
             tasks.extend(pet.get_tasks())
         return tasks
+
+    # -- Serialisation (Challenge 2) ------------------------------------
+
+    def to_dict(self) -> dict:
+        """Serialise the owner and all pets/tasks to a plain dictionary."""
+        return {
+            "name":                     self.name,
+            "available_minutes_per_day": self.available_minutes_per_day,
+            "preferences":              self.preferences,
+            "pets":                     [p.to_dict() for p in self.pets],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Owner":
+        """Reconstruct an Owner (with all pets and tasks) from a serialised dictionary."""
+        owner = cls(
+            name=data.get("name", ""),
+            available_minutes_per_day=data.get("available_minutes_per_day", 120),
+            preferences=data.get("preferences", []),
+        )
+        for pd in data.get("pets", []):
+            owner.add_pet(Pet.from_dict(pd))
+        return owner
+
+    def save_to_json(self, path: str = "data.json") -> None:
+        """Persist the full owner graph to a JSON file at *path*."""
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(self.to_dict(), fh, indent=2)
+
+    @classmethod
+    def load_from_json(cls, path: str = "data.json") -> "Owner":
+        """Load and reconstruct an Owner from a JSON file. Raises FileNotFoundError if absent."""
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return cls.from_dict(data)
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +300,6 @@ class Scheduler:
                 except ValueError:
                     pass
             return (1, datetime.min)
-
         return sorted(tasks, key=_key)
 
     # -- Filtering -------------------------------------------------------
@@ -227,7 +329,6 @@ class Scheduler:
         """
         Check for overlapping time windows among scheduled tasks that have an
         explicit start_time set. Returns human-readable warning strings.
-        Returns an empty list when no conflicts are found.
 
         Tradeoff: only tasks with a start_time are checked; tasks without one
         are assumed to be sequentially safe and are silently skipped.
@@ -238,14 +339,13 @@ class Scheduler:
                 try:
                     timed.append((t, datetime.strptime(t.start_time, "%H:%M")))
                 except ValueError:
-                    pass  # malformed time string; skip rather than crash
+                    pass
 
         warnings: list[str] = []
         for i, (a, start_a) in enumerate(timed):
             end_a = start_a + timedelta(minutes=a.duration_minutes)
             for b, start_b in timed[i + 1:]:
                 end_b = start_b + timedelta(minutes=b.duration_minutes)
-                # Two windows overlap when A starts before B ends AND B starts before A ends
                 if start_a < end_b and start_b < end_a:
                     warnings.append(
                         f"Conflict: '{a.title}' "
@@ -259,9 +359,98 @@ class Scheduler:
 
     def complete_task(self, pet: Pet, task: Task) -> None:
         """
-        Mark a task complete. If the task is recurring (daily/weekly), automatically
-        add the next occurrence to the same pet so it appears in tomorrow's schedule.
+        Mark a task complete. If recurring, automatically add the next occurrence
+        to the same pet so it appears in tomorrow's schedule.
         """
         next_task = task.mark_complete()
         if next_task is not None:
             pet.add_task(next_task)
+
+    # -- Challenge 1: Weighted urgency scheduling ------------------------
+
+    def _task_score(self, task: Task) -> float:
+        """
+        Compute a composite urgency score combining priority weight and due-date
+        proximity. Higher score = schedule sooner.
+
+        Score = priority_weight + urgency_bonus
+          priority_weight: high=10, medium=5, low=1
+          urgency_bonus:   overdue=5, tomorrow=3, within 3 days=1.5, within 7=0.5
+        """
+        score = _PRIORITY_WEIGHT.get(task.priority, 5.0)
+        if task.due_date:
+            days = (task.due_date - date.today()).days
+            if days <= 0:
+                score += _URGENCY_BONUS["overdue"]
+            elif days == 1:
+                score += _URGENCY_BONUS["tomorrow"]
+            elif days <= 3:
+                score += _URGENCY_BONUS["soon"]
+            elif days <= 7:
+                score += _URGENCY_BONUS["upcoming"]
+        return score
+
+    def generate_weighted_schedule(self, day_start: str = _DAY_START) -> list[Task]:
+        """
+        Enhanced greedy scheduler using a composite urgency score (priority weight
+        + due-date proximity) instead of simple priority rank.
+
+        An overdue medium-priority task scores the same as a non-urgent high-priority
+        task (both = 10), allowing urgency to break ties when two tasks share a priority
+        tier — tasks at risk of being missed are surfaced earlier in the plan.
+        """
+        incomplete = [t for t in self.owner.get_all_tasks() if not t.completed]
+        ranked = sorted(incomplete, key=lambda t: (-self._task_score(t), t.duration_minutes))
+
+        budget = self.owner.available_minutes_per_day
+        cursor = datetime.strptime(day_start, "%H:%M")
+        scheduled: list[Task] = []
+        for task in ranked:
+            if task.duration_minutes <= budget:
+                task.start_time = cursor.strftime("%H:%M")
+                scheduled.append(task)
+                budget -= task.duration_minutes
+                cursor += timedelta(minutes=task.duration_minutes)
+        return scheduled
+
+    def next_available_slot(
+        self,
+        task: Task,
+        schedule: list[Task],
+        day_start: str = _DAY_START,
+        day_end: str = _DAY_END,
+    ) -> Optional[str]:
+        """
+        Find the earliest HH:MM gap in *schedule* where *task* could be inserted
+        without conflicting with any already-scheduled tasks.
+
+        Only tasks with an explicit start_time in *schedule* are treated as occupied
+        slots. Tasks without a start_time are ignored (assumed untimed/flexible).
+        Returns None if the task cannot fit anywhere before day_end.
+        """
+        end_of_day = datetime.strptime(day_end, "%H:%M")
+        cursor = datetime.strptime(day_start, "%H:%M")
+
+        # Collect and sort occupied windows from the schedule
+        occupied: list[tuple[datetime, datetime]] = []
+        for t in schedule:
+            if t.start_time:
+                try:
+                    s = datetime.strptime(t.start_time, "%H:%M")
+                    occupied.append((s, s + timedelta(minutes=t.duration_minutes)))
+                except ValueError:
+                    pass
+        occupied.sort()
+
+        for slot_start, slot_end in occupied:
+            gap = int((slot_start - cursor).total_seconds() // 60)
+            if gap >= task.duration_minutes:
+                return cursor.strftime("%H:%M")
+            cursor = max(cursor, slot_end)
+
+        # Check remaining time after the last scheduled task
+        remaining = int((end_of_day - cursor).total_seconds() // 60)
+        if remaining >= task.duration_minutes:
+            return cursor.strftime("%H:%M")
+
+        return None

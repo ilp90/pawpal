@@ -27,11 +27,24 @@ Your final app should:
 - **Owner & pet profiles** — register one or more pets with name, species, age, and breed; set a daily time budget.
 - **Task management** — add tasks with title, duration, priority (low/medium/high), category, and optional recurrence (daily/weekly).
 - **Smart daily scheduler** — greedy algorithm selects and orders tasks by priority within the owner's time budget; assigns sequential start times from a configurable day start.
+- **Urgency-weighted scheduler** *(bonus)* — composite score combines priority weight + due-date proximity so overdue tasks are surfaced earlier; toggle in the sidebar.
+- **Next-available-slot finder** *(bonus)* — for every task that couldn't fit in the schedule, shows the earliest gap in the day where it could be inserted.
 - **Sort by time** — any task list can be sorted chronologically (HH:MM); untimed tasks go last.
 - **Filter tasks** — narrow the task list by pet name, completion status, or both.
 - **Recurring task auto-scheduling** — marking a daily or weekly task complete automatically queues the next occurrence for the following day or week.
 - **Conflict detection** — compares every pair of time-pinned tasks; surfaces human-readable warnings for any overlapping windows without crashing the app.
+- **Emoji colour-coding** *(bonus)* — 🔴/🟡/🟢 priority indicators and category icons (🦮🍽️💊✂️🎾) in all task and schedule tables.
+- **Data persistence** *(bonus)* — owner, pets, and tasks are auto-saved to `data.json` on every mutation and reloaded on app startup; no data is lost between browser sessions.
 - **Plan explanation** — plain-English summary shows time used vs. available and explains which tasks were skipped and why.
+
+## Bonus Challenges Implemented
+
+| Challenge | What was added |
+|---|---|
+| **1 – Advanced algorithm** | `Scheduler.generate_weighted_schedule()` (composite urgency score) + `Scheduler.next_available_slot()` (gap finder). Agent Mode was used to brainstorm the score formula and compare an interval-based gap finder vs a simpler end-of-day check before choosing the gap-scan approach. |
+| **2 – Data persistence** | `Task/Pet/Owner.to_dict()`, `from_dict()`, `Owner.save_to_json()`, `Owner.load_from_json()`. `app.py` calls `_autosave()` after every mutation and loads from `data.json` on first run. |
+| **3 & 4 – UI polish** | `PRIORITY_EMOJI` and `CATEGORY_EMOJI` lookups in `pawpal_system.py`; used in both the task list and the schedule table. Sidebar toggle switches between standard and weighted scheduling mode. |
+| **5 – Multi-model comparison** | See `reflection.md §6` — Claude vs GPT-4o on the weighted scoring function; Claude's named-tier dict was chosen for maintainability over GPT-4o's inline magic numbers. |
 
 ## Getting started
 
