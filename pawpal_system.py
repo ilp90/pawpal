@@ -8,26 +8,30 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-
-# ---------------------------------------------------------------------------
-# Task – a single pet-care action (dataclass keeps it clean and comparable)
-# ---------------------------------------------------------------------------
+# Priority rank used for sorting: lower number = higher urgency
+_PRIORITY_RANK: dict[str, int] = {"high": 0, "medium": 1, "low": 2}
 
 VALID_PRIORITIES = ("low", "medium", "high")
 VALID_CATEGORIES = ("walk", "feed", "medication", "grooming", "enrichment", "other")
 
 
+# ---------------------------------------------------------------------------
+# Task – a single pet-care action (dataclass keeps it clean and comparable)
+# ---------------------------------------------------------------------------
+
 @dataclass
 class Task:
+    """A single pet-care activity with a duration, priority, and completion state."""
+
     title: str
     duration_minutes: int
-    priority: str = "medium"          # "low" | "medium" | "high"
-    category: str = "other"           # see VALID_CATEGORIES
+    priority: str = "medium"   # "low" | "medium" | "high"
+    category: str = "other"    # see VALID_CATEGORIES
     completed: bool = False
 
     def mark_complete(self) -> None:
-        """Mark this task as completed."""
-        pass  # TODO: implement
+        """Set the task's completed flag to True."""
+        self.completed = True
 
 
 # ---------------------------------------------------------------------------
@@ -36,8 +40,10 @@ class Task:
 
 @dataclass
 class Pet:
+    """A pet with basic profile information and an associated list of care tasks."""
+
     name: str
-    species: str                      # e.g. "dog", "cat", "rabbit"
+    species: str               # e.g. "dog", "cat", "rabbit"
     age: int = 0
     breed: str = ""
     notes: str = ""
@@ -45,11 +51,11 @@ class Pet:
 
     def add_task(self, task: Task) -> None:
         """Append a Task to this pet's task list."""
-        pass  # TODO: implement
+        self.tasks.append(task)
 
     def get_tasks(self) -> list[Task]:
-        """Return all tasks for this pet."""
-        pass  # TODO: implement
+        """Return a copy of all tasks for this pet."""
+        return list(self.tasks)
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +63,8 @@ class Pet:
 # ---------------------------------------------------------------------------
 
 class Owner:
+    """The pet owner, who has a daily time budget and one or more pets."""
+
     def __init__(
         self,
         name: str,
@@ -70,15 +78,22 @@ class Owner:
 
     def add_pet(self, pet: Pet) -> None:
         """Register a pet with this owner."""
-        pass  # TODO: implement
+        self.pets.append(pet)
 
     def get_pets(self) -> list[Pet]:
         """Return all pets belonging to this owner."""
-        pass  # TODO: implement
+        return list(self.pets)
 
     def set_available_time(self, minutes: int) -> None:
-        """Update how many minutes per day the owner has available."""
-        pass  # TODO: implement
+        """Update how many minutes per day the owner has available for pet care."""
+        self.available_minutes_per_day = minutes
+
+    def get_all_tasks(self) -> list[Task]:
+        """Collect and return every task across all of this owner's pets."""
+        tasks: list[Task] = []
+        for pet in self.pets:
+            tasks.extend(pet.get_tasks())
+        return tasks
 
 
 # ---------------------------------------------------------------------------
@@ -86,24 +101,47 @@ class Owner:
 # ---------------------------------------------------------------------------
 
 class Scheduler:
-    def __init__(self, owner: Owner, pet: Pet) -> None:
+    """Retrieves tasks from all of an owner's pets and builds a prioritised daily plan."""
+
+    def __init__(self, owner: Owner) -> None:
         self.owner = owner
-        self.pet = pet
 
     def prioritize_tasks(self) -> list[Task]:
-        """Return tasks sorted by priority (high → medium → low), then duration."""
-        pass  # TODO: implement
+        """Return incomplete tasks sorted by priority (high→medium→low), then duration."""
+        incomplete = [t for t in self.owner.get_all_tasks() if not t.completed]
+        return sorted(incomplete, key=lambda t: (_PRIORITY_RANK.get(t.priority, 1), t.duration_minutes))
 
     def generate_schedule(self) -> list[Task]:
-        """
-        Greedily select tasks in priority order until the owner's available
-        time is exhausted. Returns the ordered list of scheduled tasks.
-        """
-        pass  # TODO: implement
+        """Greedily select tasks in priority order until the owner's time budget is used up."""
+        budget = self.owner.available_minutes_per_day
+        scheduled: list[Task] = []
+        for task in self.prioritize_tasks():
+            if task.duration_minutes <= budget:
+                scheduled.append(task)
+                budget -= task.duration_minutes
+        return scheduled
 
     def explain_plan(self, schedule: list[Task]) -> str:
-        """
-        Return a plain-English explanation of why each task was included
-        and the total time used vs. available.
-        """
-        pass  # TODO: implement
+        """Return a plain-English summary of the schedule and why tasks were included or skipped."""
+        if not schedule:
+            return "No tasks could fit within the available time."
+
+        total_used = sum(t.duration_minutes for t in schedule)
+        available = self.owner.available_minutes_per_day
+        lines = [
+            f"Today's plan for {self.owner.name}",
+            f"Time used: {total_used} / {available} min\n",
+        ]
+        for i, task in enumerate(schedule, 1):
+            lines.append(
+                f"  {i}. [{task.priority.upper():6}] {task.title}"
+                f"  –  {task.duration_minutes} min  ({task.category})"
+            )
+
+        all_incomplete = [t for t in self.owner.get_all_tasks() if not t.completed]
+        skipped = [t for t in all_incomplete if t not in schedule]
+        if skipped:
+            names = ", ".join(t.title for t in skipped)
+            lines.append(f"\n  Skipped (time constraint): {names}")
+
+        return "\n".join(lines)

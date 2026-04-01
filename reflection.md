@@ -67,10 +67,11 @@ classDiagram
 
 **b. Design changes**
 
-During the skeleton phase, one notable refinement emerged from reviewing the initial UML:
+During the skeleton and implementation phases, two refinements emerged:
 
-- **Pet became a dataclass (from a plain class).** The original sketch had `Pet` as a regular class, but since it primarily holds data (name, species, age, breed, notes) with only two helper methods, converting it to a `@dataclass` reduces boilerplate and makes instances directly comparable with `==` — useful later for testing. The `tasks` list is declared as a `field(default_factory=list)` to avoid the classic mutable-default-argument bug.
-- **Owner stayed a plain class** because it has non-trivial initialisation logic (defaulting `preferences` to an empty list safely) and will accumulate richer behaviour as scheduling preferences grow. Mixing that with `@dataclass` would add unnecessary complexity at this stage.
+- **Pet became a dataclass (from a plain class).** The original sketch had `Pet` as a regular class, but since it primarily holds data with only two helper methods, `@dataclass` reduces boilerplate and makes instances directly comparable with `==` — useful for testing. The `tasks` list is declared as `field(default_factory=list)` to avoid the mutable-default-argument bug. Owner stayed a plain class because it has richer initialisation logic that doesn't fit cleanly into dataclass constraints.
+
+- **Scheduler changed from `(owner, pet)` to `(owner)` only.** The initial UML passed a single `Pet` to `Scheduler`, but the project brief says the scheduler should "retrieve, organise, and manage tasks *across* pets" (plural). Passing just an `Owner` is cleaner: `Scheduler` calls `owner.get_all_tasks()` to collect every task from every pet in one step. This also makes it trivial to add a second pet — the scheduler doesn't need to change at all. A new helper `Owner.get_all_tasks()` was added to centralise that aggregation logic.
 
 ---
 
